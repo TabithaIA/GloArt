@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mural Procreate Pocket</title>
+    <style>
+        * { box-sizing: border-box; touch-action: none; user-select: none; margin: 0; padding: 0; }
+        body {
+            background-color: #0d0d0f;
+            color: #f2f2f7;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+            background-color: #09090b;
+        }
+        
+        canvas#mural {
+            position: absolute;
+            background-color: #ffffff;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.75);
+            transform-origin: 0 0;
+        }
+
+        /* --- INTERFAZ COMPACTA ESTILO PROCREATE --- */
+        
+        #top-bar {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 24px);
+            max-width: 1200px;
+            height: 36px;
+            background: rgba(24, 24, 26, 0.82);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 12px;
+            z-index: 100;
+        }
+
+        .bar-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .icon-btn {
+            background: transparent;
+            border: none;
+            color: #a1a1aa;
+            font-size: 14px;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon-btn:hover { color: #ffffff; background: rgba(255,255,255,0.05); }
+        .icon-btn.active { color: #30d158; background: rgba(48, 209, 88, 0.12); }
+        .icon-btn:disabled { color: #3a3a3c; }
+
+        .divider {
+            width: 1px;
+            height: 16px;
+            background: rgba(255,255,255,0.1);
+        }
+
+        #colorPreview {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 0 6px rgba(0,0,0,0.6);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        #colorPreview:active { transform: scale(0.9); }
+
+        #wheelContainer {
+            display: none;
+            position: absolute;
+            top: 48px;
+            right: 12px;
+            background: #18181a;
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.7);
+            border: 1px solid rgba(255,255,255,0.08);
+            z-index: 200;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+        }
+        #wheelContainer.show { display: flex; }
+
+        #sidebar-controls {
+            position: absolute;
+            left: 14px;
+            top: 55%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+            align-items: center;
+            z-index: 100;
+            background: rgba(24, 24, 26, 0.75);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            padding: 14px 6px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .slider-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            height: 100px;
+            width: 20px;
+        }
+
+        .vertical-slider {
+            -webkit-appearance: none;
+            transform: rotate(-90deg);
+            width: 100px;
+            height: 3px;
+            background: #2c2c2e;
+            border-radius: 1.5px;
+            position: absolute;
+            top: 48px;
+            cursor: pointer;
+        }
+        .vertical-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f2f2f7;
+            box-shadow: 0 0 4px rgba(0,0,0,0.6);
+        }
+
+        .slider-label {
+            font-size: 7.5px;
+            color: #71717a;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: absolute;
+            bottom: -14px;
+            white-space: nowrap;
+        }
+
+        .val-indicator {
+            font-size: 8px;
+            color: #a1a1aa;
+            position: absolute;
+            top: -14px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #fileInput { display: none; }
+
+        #status-bar {
+            position: absolute;
+            bottom: 8px;
+            right: 12px;
+            font-size: 9px;
+            color: #52525b;
+            pointer-events: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="top-bar">
+        <div class="bar-group">
+            <button id="btn-undo" class="icon-btn" title="Deshacer">⤺</button>
+            <button id="btn-redo" class="icon-btn" title="Rehacer">⤻</button>
+            <button id="btn-clear" class="icon-btn" style="color: #ff453a;" title="Limpiar lienzo">🗑️</button>
+        </div>
+
+        <div class="bar-group">
+            <button id="btn-draw" class="icon-btn active" title="Pincel">✏️</button>
+            <button id="btn-eraser" class="icon-btn" title="Goma de borrar">🧽</button>
+            <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
+            <div class="divider"></div>
+            <label for="fileInput" class="icon-btn" title="Insertar Imagen" style="cursor:pointer;">🖼️</label>
+            <input type="file" id="fileInput" accept="image/*">
+            <button id="btn-reset-view" class="icon-btn" title="Centrar Lienzo">🏠</button>
+            <div class="divider"></div>
+            <div id="colorPreview" style="background-color: #ff4a5a;"></div>
+        </div>
+    </div>
+
+    <div id="wheelContainer">
+        <canvas id="colorWheel" width="110" height="110"></canvas>
+        <input type="range" id="brightnessSlider" style="width: 100%; height: 3px;" min="0" max="100" value="100">
+    </div>
+
+    <div id="sidebar-controls">
+        <div class="slider-wrapper">
+            <span id="sizeVal" class="val-indicator">5px</span>
+            <input type="range" id="brushSize" class="vertical-slider" min="1" max="150" value="15">
+            <div class="slider-label">Tamaño</div>
+        </div>
+        <div style="height: 6px;"></div>
+        <div class="slider-wrapper">
+            <span id="opacityVal" class="val-indicator">100%</span>
+            <input type="range" id="brushOpacity" class="vertical-slider" min="10" max="100" value="100">
+            <div class="slider-label">Opacidad</div>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <!-- SE OPTIMIZÓ EL TAMAÑO A UN LIENZO ESTABLE DE 3K -->
+        <canvas id="mural" width="4096" height="4096"></canvas>
+    </div>
+
+    <div id="status-bar">Lienzo 4096 × 4096</div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, push, onChildAdded, onChildRemoved, remove, set } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAfPCwIoohEB9jPvsv9A8plz-FcbSUV_bY",
+            authDomain: "kofykoivk.firebaseapp.com",
+            databaseURL: "https://kofykoivk-default-rtdb.firebaseio.com",
+            projectId: "kofykoivk",
+            storageBucket: "kofykoivk.firebasestorage.app",
+            messagingSenderId: "787535249742",
+            appId: "1:787535249742:web:b310d356841e2d52421e1f",
+            measurementId: "G-1VJ9FNMF72"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const linesRef = ref(db, 'mural_elements');
+
+        const container = document.getElementById('canvas-container');
+        const canvas = document.getElementById('mural');
+        const ctx = canvas.getContext('2d');
+        
+        let currentMode = 'draw'; 
+        let isDrawing = false;
+        let isPanning = false;
+        let currentColor = '#ff4a5a';
+        let currentSize = 5;
+        let currentOpacity = 1;
+
+        // Se ajustó la escala inicial (de 0.12 a 0.4) para el nuevo tamaño
+        let scale = 0.4; 
+        let panX = (window.innerWidth - canvas.width * scale) / 2;
+        let panY = (window.innerHeight - canvas.height * scale) / 2;
+        
+        let startX, startY;
+        let touchStartDist = 0;
+        let startScale = 1;
+
+        let activePointers = [];
+        
+        let myLastKeys = [];    
+        let redoStack = [];     
+        let allElements = {};   
+        let currentPathPoints = []; 
+
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        updateTransform();
+
+        const btnDraw = document.getElementById('btn-draw');
+        const btnEraser = document.getElementById('btn-eraser');
+        const btnPan = document.getElementById('btn-pan');
+        const brushSizeInput = document.getElementById('brushSize');
+        const brushOpacityInput = document.getElementById('brushOpacity');
+        const sizeVal = document.getElementById('sizeVal');
+        const opacityVal = document.getElementById('opacityVal');
+        const fileInput = document.getElementById('fileInput');
+
+        function setMode(mode) {
+            currentMode = mode;
+            [btnDraw, btnEraser, btnPan].forEach(b => b.classList.remove('active'));
+            if(mode === 'draw') btnDraw.classList.add('active');
+            if(mode === 'eraser') btnEraser.classList.add('active');
+            if(mode === 'pan') btnPan.classList.add('active');
+        }
+
+        btnDraw.addEventListener('click', () => setMode('draw'));
+        btnEraser.addEventListener('click', () => setMode('eraser'));
+        btnPan.addEventListener('click', () => setMode('pan'));
+        
+        brushSizeInput.addEventListener('input', (e) => {
+            currentSize = parseInt(e.target.value);
+            sizeVal.textContent = currentSize + 'px';
+        });
+        
+        brushOpacityInput.addEventListener('input', (e) => {
+            currentOpacity = parseInt(e.target.value) / 100;
+            opacityVal.textContent = e.target.value + '%';
+        });
+
+        document.getElementById('btn-reset-view').addEventListener('click', () => {
+            scale = 0.4;
+            panX = (window.innerWidth - canvas.width * scale) / 2;
+            panY = (window.innerHeight - canvas.height * scale) / 2;
+            updateTransform();
+        });
+
+        const colorPreview = document.getElementById('colorPreview');
+        const wheelContainer = document.getElementById('wheelContainer');
+        const colorWheel = document.getElementById('colorWheel');
+        const wheelCtx = colorWheel.getContext('2d');
+        const brightnessSlider = document.getElementById('brightnessSlider');
+        let currentHue = 0, currentSat = 100;
+
+        colorPreview.addEventListener('pointerdown', (e) => { e.stopPropagation(); wheelContainer.classList.toggle('show'); });
+        document.addEventListener('pointerdown', (e) => {
+            if (!wheelContainer.contains(e.target) && e.target !== colorPreview) wheelContainer.classList.remove('show');
+        });
+
+        function drawColorWheel() {
+            const radius = colorWheel.width / 2;
+            const brightness = brightnessSlider.value / 100;
+            wheelCtx.clearRect(0,0,colorWheel.width,colorWheel.height);
+            for (let y = 0; y < colorWheel.height; y++) {
+                for (let x = 0; x < colorWheel.width; x++) {
+                    const dx = x - radius, dy = y - radius;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance <= radius) {
+                        let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                        if (angle < 0) angle += 360;
+                        const sat = (distance / radius) * 100;
+                        wheelCtx.fillStyle = `hsl(${angle}, ${sat}%, ${50 * brightness}%)`;
+                        wheelCtx.fillRect(x, y, 1, 1);
+                    }
+                }
+            }
+        }
+        drawColorWheel();
+        brightnessSlider.addEventListener('input', () => { drawColorWheel(); updateColor(); });
+        
+        colorWheel.addEventListener('pointerdown', (e) => {
+            const rect = colorWheel.getBoundingClientRect();
+            const x = e.clientX - rect.left, y = e.clientY - rect.top;
+            const radius = colorWheel.width / 2;
+            const dx = x - radius, dy = y - radius;
+            if (Math.sqrt(dx*dx + dy*dy) <= radius) {
+                let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                currentHue = angle < 0 ? angle + 360 : angle;
+                currentSat = (Math.sqrt(dx*dx + dy*dy) / radius) * 100;
+                updateColor();
+            }
+        });
+
+        function updateColor() {
+            currentColor = `hsl(${currentHue}, ${currentSat}%, ${50 * (brightnessSlider.value / 100)}%)`;
+            colorPreview.style.backgroundColor = currentColor;
+        }
+
+        function updateTransform() { canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`; }
+
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const mouseX = e.clientX - container.getBoundingClientRect().left;
+            const mouseY = e.clientY - container.getBoundingClientRect().top;
+            const canvasX = (mouseX - panX) / scale, canvasY = (mouseY - panY) / scale;
+            if (e.deltaY < 0) scale *= 1.15; else scale /= 1.15;
+            scale = Math.max(0.05, Math.min(scale, 8));
+            panX = mouseX - canvasX * scale;
+            panY = mouseY - canvasY * scale;
+            updateTransform();
+        }, { passive: false });
+
+        function getEventCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
+        }
+
+        container.addEventListener('pointerdown', (e) => {
+            if(e.clientY < 52 || (e.clientX < 70 && e.clientY > window.innerHeight/2 - 120 && e.clientY < window.innerHeight/2 + 120)) return;
+
+            activePointers.push(e);
+
+            if (activePointers.length === 2) {
+                isDrawing = false;
+                isPanning = true;
+                const p1 = activePointers[0];
+                const p2 = activePointers[1];
+                touchStartDist = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
+                startScale = scale;
+                startX = ((p1.clientX + p2.clientX) / 2) - panX;
+                startY = ((p1.clientY + p2.clientY) / 2) - panY;
+                return;
+            }
+
+            if (activePointers.length === 1) {
+                if (e.button === 2 || currentMode === 'pan') {
+                    isPanning = true;
+                    startX = e.clientX - panX; startY = e.clientY - panY;
+                    return;
+                }
+                if ((e.button === 0 || e.pointerType === 'touch') && (currentMode === 'draw' || currentMode === 'eraser')) {
+                    isDrawing = true;
+                    const pt = getEventCoords(e);
+                    currentPathPoints = [pt]; 
+                }
+            }
+        });
+
+        container.addEventListener('pointermove', (e) => {
+            const index = activePointers.findIndex(p => p.pointerId === e.pointerId);
+            if (index !== -1) activePointers[index] = e;
+
+            if (activePointers.length === 2) {
+                const p1 = activePointers[0];
+                const p2 = activePointers[1];
+                const dist = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
+                scale = Math.max(0.05, Math.min((dist / touchStartDist) * startScale, 8));
+                const midX = (p1.clientX + p2.clientX) / 2;
+                const midY = (p1.clientY + p2.clientY) / 2;
+                panX = midX - startX * (scale / startScale);
+                panY = midY - startY * (scale / startScale);
+                updateTransform();
+                return;
+            }
+
+            if (isPanning && activePointers.length === 1) {
+                panX = e.clientX - startX; 
+                panY = e.clientY - startY;
+                updateTransform();
+                return;
+            }
+
+            if (isDrawing && activePointers.length === 1) {
+                const pt = getEventCoords(e);
+                currentPathPoints.push(pt);
+                
+                redrawEverything();
+                
+                ctx.globalAlpha = currentMode === 'eraser' ? 1 : currentOpacity;
+                drawSmoothPath(currentPathPoints, currentMode === 'eraser' ? '#ffffff' : currentColor, currentSize);
+                ctx.globalAlpha = 1;
+            }
+        });
+
+        const handlePointerUp = (e) => {
+            if (isDrawing && currentPathPoints.length > 0) {
+                const elementData = {
+                    type: 'path',
+                    points: currentPathPoints,
+                    color: currentMode === 'eraser' ? '#ffffff' : currentColor,
+                    size: currentSize,
+                    opacity: currentMode === 'eraser' ? 1 : currentOpacity
+                };
+                
+                const newElementRef = push(linesRef, elementData);
+                myLastKeys.push(newElementRef.key);
+                redoStack = []; 
+                currentPathPoints = [];
+            }
+
+            activePointers = activePointers.filter(p => p.pointerId !== e.pointerId);
+            if (activePointers.length < 2) isPanning = false;
+            if (activePointers.length === 0) isDrawing = false;
+        };
+
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
+        container.addEventListener('contextmenu', e => e.preventDefault());
+
+        function drawSmoothPath(points, color, size) {
+            if (points.length === 0) return;
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = size;
+
+            if (points.length < 3) {
+                ctx.arc(points[0].x, points[0].y, size / 2, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                return;
+            }
+
+            ctx.moveTo(points[0].x, points[0].y);
+            
+            for (let i = 1; i < points.length - 1; i++) {
+                const xc = (points[i].x + points[i+1].x) / 2;
+                const yc = (points[i].y + points[i+1].y) / 2;
+                ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+            }
+            
+            ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+            ctx.stroke();
+        }
+
+        function drawSingleElement(data) {
+            if (data.type === 'path' && data.points) {
+                ctx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
+                drawSmoothPath(data.points, data.color, data.size);
+                ctx.globalAlpha = 1;
+            } else if (data.type === 'image') {
+                const img = new Image();
+                img.onload = function() {
+                    const aspect = img.height / img.width;
+                    ctx.drawImage(img, data.x, data.y, data.w, data.w * aspect);
+                };
+                img.src = data.src;
+            }
+        }
+
+        function redrawEverything() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            Object.values(allElements).forEach(element => {
+                drawSingleElement(element);
+            });
+        }
+
+        document.getElementById('btn-undo').addEventListener('click', () => {
+            if (myLastKeys.length === 0) return;
+            const keyToUndo = myLastKeys.pop();
+            const backupData = allElements[keyToUndo];
+            if (backupData) {
+                redoStack.push({ key: keyToUndo, data: backupData });
+                remove(ref(db, `mural_elements/${keyToUndo}`));
+            }
+        });
+
+        document.getElementById('btn-redo').addEventListener('click', () => {
+            if (redoStack.length === 0) return;
+            const action = redoStack.pop();
+            set(ref(db, `mural_elements/${action.key}`), action.data);
+            myLastKeys.push(action.key);
+        });
+
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            if (confirm("¿Quieres eliminar de forma permanente todo el lienzo?")) {
+                remove(linesRef);
+                redoStack = []; myLastKeys = [];
+            }
+        });
+
+        onChildAdded(linesRef, (snapshot) => {
+            allElements[snapshot.key] = snapshot.val();
+            redrawEverything();
+        });
+
+        onChildRemoved(linesRef, (snapshot) => {
+            delete allElements[snapshot.key];
+            redrawEverything();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const viewCenterX = (window.innerWidth / 2 - panX) / scale;
+                const viewCenterY = (window.innerHeight / 2 - panY) / scale;
+                const imgData = {
+                    type: 'image',
+                    src: event.target.result,
+                    x: viewCenterX - 200,
+                    y: viewCenterY - 200,
+                    w: 400
+                };
+                const newElementRef = push(linesRef, imgData);
+                myLastKeys.push(newElementRef.key);
+            };
+            reader.readAsDataURL(file);
+        });
+    </script>
+</body>
+</html>
+
