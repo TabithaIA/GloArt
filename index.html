@@ -55,7 +55,7 @@
         .bar-group {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 1px;
         }
 
         .icon-btn {
@@ -212,13 +212,16 @@
             z-index: 100;
         }
 
-        /* --- VENTANA DE REFERENCIA FLOTANTE --- */
+        /* --- VENTANA DE REFERENCIA FLOTANTE MODIFICADA --- */
         #reference-window {
             display: none;
             position: absolute;
             top: 60px;
             left: 20px;
             width: 220px;
+            height: auto;
+            min-width: 120px;
+            min-height: 90px;
             background: #18181a;
             border-radius: 12px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.6);
@@ -226,9 +229,15 @@
             z-index: 300;
             overflow: hidden;
             flex-direction: column;
-            touch-action: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
         #reference-window.show { display: flex; }
+        
+        /* Estado activo cuando se pulsa el botón de redimensión */
+        #reference-window.resize-mode {
+            border: 2px solid #007aff !important;
+            box-shadow: 0 0 15px rgba(0, 122, 255, 0.5);
+        }
         
         #reference-header {
             background: #242426;
@@ -240,15 +249,30 @@
             align-items: center;
             cursor: move;
             border-bottom: 1px solid rgba(255,255,255,0.05);
+            flex-shrink: 0;
         }
         
-        #reference-close {
+        #reference-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ref-btn {
             background: transparent;
             border: none;
-            color: #ff453a;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.1s;
         }
+        .ref-btn:active { transform: scale(0.85); }
+        
+        #reference-resize-toggle { color: #0a84ff; }
+        #reference-resize-toggle.active { color: #30d158; }
+        #reference-close { color: #ff453a; font-size: 12px; }
 
         #reference-content {
             width: 100%;
@@ -257,6 +281,14 @@
             justify-content: center;
             align-items: center;
             background: #09090b;
+            flex-grow: 1;
+            position: relative;
+        }
+
+        /* Cuando está activo el modo redimensión cambiamos el cursor de todo el marco */
+        #reference-window.resize-mode #reference-content,
+        #reference-window.resize-mode #reference-header {
+            cursor: se-resize !important;
         }
 
         #reference-img {
@@ -265,6 +297,10 @@
             object-fit: contain;
             border-radius: 6px;
             pointer-events: none;
+            transition: max-height 0.1s;
+        }
+        #reference-window.resize-mode #reference-img {
+            max-height: 100% !important; /* Permite romper el límite original al redimensionar */
         }
     </style>
 </head>
@@ -280,6 +316,7 @@
         <div class="bar-group">
             <button id="btn-draw" class="icon-btn active" title="Pincel">✏️</button>
             <button id="btn-eraser" class="icon-btn" title="Goma de borrar">🧽</button>
+            <button id="btn-picker" class="icon-btn" title="Gotero / Selector de color">🧪</button>
             <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
             <div class="divider"></div>
             <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
@@ -294,7 +331,10 @@
     <div id="reference-window">
         <div id="reference-header">
             <span>Referencia</span>
-            <button id="reference-close">✕</button>
+            <div id="reference-actions">
+                <button id="reference-resize-toggle" class="ref-btn" title="Modo Redimensionar">📐</button>
+                <button id="reference-close" class="ref-btn" title="Cerrar">✕</button>
+            </div>
         </div>
         <div id="reference-content">
             <img id="reference-img" src="" alt="Referencia">
@@ -355,6 +395,14 @@
         const canvas = document.getElementById('mural');
         const ctx = canvas.getContext('2d');
         
+        // --- LIENZO AUXILIAR (OFFSCREEN CANVAS) PARA CAPAS ---
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = canvas.width;
+        offscreenCanvas.height = canvas.height;
+        const oCtx = offscreenCanvas.getContext('2d');
+        oCtx.lineJoin = 'round';
+        oCtx.lineCap = 'round';
+
         let currentMode = 'draw'; 
         let isDrawing = false;
         let isPanning = false;
@@ -384,6 +432,7 @@
 
         const btnDraw = document.getElementById('btn-draw');
         const btnEraser = document.getElementById('btn-eraser');
+        const btnPicker = document.getElementById('btn-picker');
         const btnPan = document.getElementById('btn-pan');
         const brushSizeInput = document.getElementById('brushSize');
         const brushOpacityInput = document.getElementById('brushOpacity');
@@ -393,14 +442,16 @@
 
         function setMode(mode) {
             currentMode = mode;
-            [btnDraw, btnEraser, btnPan].forEach(b => b.classList.remove('active'));
+            [btnDraw, btnEraser, btnPicker, btnPan].forEach(b => b.classList.remove('active'));
             if(mode === 'draw') btnDraw.classList.add('active');
             if(mode === 'eraser') btnEraser.classList.add('active');
+            if(mode === 'picker') btnPicker.classList.add('active');
             if(mode === 'pan') btnPan.classList.add('active');
         }
 
         btnDraw.addEventListener('click', () => setMode('draw'));
         btnEraser.addEventListener('click', () => setMode('eraser'));
+        btnPicker.addEventListener('click', () => setMode('picker'));
         btnPan.addEventListener('click', () => setMode('pan'));
         
         brushSizeInput.addEventListener('input', (e) => {
@@ -496,6 +547,31 @@
             colorPreview.style.backgroundColor = currentColor;
         }
 
+        // --- CONVERSIÓN DE RGB A HSL (Para el Gotero) ---
+        function rgbToHsl(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+
+            if (max === min) {
+                h = s = 0; 
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return {
+                h: Math.round(h * 360),
+                s: Math.round(s * 100),
+                l: Math.round(l * 100)
+            };
+        }
+
         function updateTransform() { canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`; }
 
         container.addEventListener('wheel', (e) => {
@@ -539,6 +615,29 @@
                     startX = e.clientX - panX; startY = e.clientY - panY;
                     return;
                 }
+                
+                // --- ACCIÓN DEL GOTERO ---
+                if (currentMode === 'picker') {
+                    const pt = getEventCoords(e);
+                    if (pt.x >= 0 && pt.x <= canvas.width && pt.y >= 0 && pt.y <= canvas.height) {
+                        const pixel = ctx.getImageData(Math.floor(pt.x), Math.floor(pt.y), 1, 1).data;
+                        
+                        if (pixel[3] === 0) {
+                            currentHue = 0; currentSat = 0; brightnessSlider.value = 100;
+                        } else {
+                            const hsl = rgbToHsl(pixel[0], pixel[1], pixel[2]);
+                            currentHue = hsl.h;
+                            currentSat = hsl.s;
+                            brightnessSlider.value = hsl.l;
+                        }
+                        
+                        updateColor();
+                        drawColorWheel();
+                        setMode('draw'); 
+                    }
+                    return;
+                }
+
                 if ((e.button === 0 || e.pointerType === 'touch') && (currentMode === 'draw' || currentMode === 'eraser')) {
                     isDrawing = true;
                     const pt = getEventCoords(e);
@@ -575,19 +674,8 @@
                 const pt = getEventCoords(e);
                 currentPathPoints.push(pt);
                 
+                // Redibujamos todo integrando el trazo actual dinámicamente
                 redrawEverything();
-                
-                if (currentMode === 'eraser') {
-                    ctx.globalCompositeOperation = 'destination-out';
-                    ctx.globalAlpha = currentOpacity;
-                    drawSmoothPath(currentPathPoints, 'rgba(0,0,0,1)', currentSize);
-                } else {
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.globalAlpha = currentOpacity;
-                    drawSmoothPath(currentPathPoints, currentColor, currentSize);
-                }
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.globalAlpha = 1;
             }
         });
 
@@ -617,59 +705,86 @@
         window.addEventListener('pointercancel', handlePointerUp);
         container.addEventListener('contextmenu', e => e.preventDefault());
 
-        function drawSmoothPath(points, color, size) {
+        function drawSmoothPath(targetCtx, points, color, size) {
             if (points.length === 0) return;
-            ctx.beginPath();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = size;
+            targetCtx.beginPath();
+            targetCtx.strokeStyle = color;
+            targetCtx.lineWidth = size;
 
             if (points.length < 3) {
-                ctx.arc(points[0].x, points[0].y, size / 2, 0, Math.PI * 2);
-                ctx.fillStyle = color;
-                ctx.fill();
+                targetCtx.arc(points[0].x, points[0].y, size / 2, 0, Math.PI * 2);
+                targetCtx.fillStyle = color;
+                targetCtx.fill();
                 return;
             }
 
-            ctx.moveTo(points[0].x, points[0].y);
+            targetCtx.moveTo(points[0].x, points[0].y);
             
             for (let i = 1; i < points.length - 1; i++) {
                 const xc = (points[i].x + points[i+1].x) / 2;
                 const yc = (points[i].y + points[i+1].y) / 2;
-                ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                targetCtx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
             }
             
-            ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
-            ctx.stroke();
+            targetCtx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+            targetCtx.stroke();
         }
 
-        function drawSingleElement(data) {
+        function drawSingleElement(targetCtx, data) {
             if (data.type === 'path' && data.points) {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
-                drawSmoothPath(data.points, data.color, data.size);
-                ctx.globalAlpha = 1;
+                targetCtx.globalCompositeOperation = 'source-over';
+                targetCtx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
+                drawSmoothPath(targetCtx, data.points, data.color, data.size);
             } else if (data.type === 'eraser' && data.points) {
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
-                drawSmoothPath(data.points, 'rgba(0,0,0,1)', data.size);
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.globalAlpha = 1;
+                targetCtx.globalCompositeOperation = 'destination-out';
+                targetCtx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
+                drawSmoothPath(targetCtx, data.points, 'rgba(0,0,0,1)', data.size);
             }
+            targetCtx.globalCompositeOperation = 'source-over';
+            targetCtx.globalAlpha = 1;
         }
 
+        // --- REDIBUJADO AVANZADO POR CAPAS AISLADAS ---
         function redrawEverything() {
+            // Limpiar lienzo principal
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            const elementsArray = Object.values(allElements);
-            
-            elementsArray.sort((a, b) => {
-                const layerA = a.layer || 1;
-                const layerB = b.layer || 1;
-                return layerA - layerB;
+            // Agrupar elementos guardados por sus respectivas capas
+            const layers = { 1: [], 2: [], 3: [] };
+            Object.values(allElements).forEach(element => {
+                const lyr = element.layer || 1;
+                if (layers[lyr]) layers[lyr].push(element);
             });
 
-            elementsArray.forEach(element => {
-                drawSingleElement(element);
+            // Si el usuario está dibujando en este momento, añadimos el trazo temporal a su capa
+            if (isDrawing && currentPathPoints.length > 0) {
+                const tempElement = {
+                    type: currentMode === 'eraser' ? 'eraser' : 'path',
+                    points: currentPathPoints,
+                    color: currentColor,
+                    size: currentSize,
+                    opacity: currentOpacity
+                };
+                layers[currentLayer].push(tempElement);
+            }
+            
+            // Renderizar secuencialmente capa por capa de abajo hacia arriba
+            [1, 2, 3].forEach(lyrNum => {
+                const elements = layers[lyrNum];
+                if (elements.length === 0) return;
+                
+                // Limpiar el lienzo auxiliar para esta capa específica
+                oCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+                
+                // Dibujar todos los trazos y borradores correspondientes en el lienzo auxiliar
+                elements.forEach(element => {
+                    drawSingleElement(oCtx, element);
+                });
+                
+                // Transferir la capa terminada y limpia al lienzo principal
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1;
+                ctx.drawImage(offscreenCanvas, 0, 0);
             });
         }
 
@@ -712,12 +827,17 @@
         const refHeader = document.getElementById('reference-header');
         const refImg = document.getElementById('reference-img');
         const refClose = document.getElementById('reference-close');
+        const refResizeToggle = document.getElementById('reference-resize-toggle');
 
         let isDraggingRef = false;
+        let isResizingRef = false;
+        let isResizeModeActive = false;
+        
         let refOffsetX = 0;
         let refOffsetY = 0;
+        let startWidth = 0;
+        let startHeight = 0;
 
-        // Cargar imagen guardada localmente si existe
         const savedImg = localStorage.getItem('gloart_ref_img');
         if (savedImg) {
             refImg.src = savedImg;
@@ -745,37 +865,98 @@
             refWindow.classList.remove('show');
             refImg.src = "";
             localStorage.removeItem('gloart_ref_img');
+            isResizeModeActive = false;
+            refWindow.classList.remove('resize-mode');
+            refResizeToggle.classList.remove('active');
+        });
+
+        refResizeToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isResizeModeActive = !isResizeModeActive;
+            if (isResizeModeActive) {
+                refWindow.classList.add('resize-mode');
+                refResizeToggle.classList.add('active');
+            } else {
+                refWindow.classList.remove('resize-mode');
+                refResizeToggle.classList.remove('active');
+            }
         });
 
         refHeader.addEventListener('pointerdown', (e) => {
-            isDraggingRef = true;
+            e.stopPropagation();
             const rect = refWindow.getBoundingClientRect();
-            refOffsetX = e.clientX - rect.left;
-            refOffsetY = e.clientY - rect.top;
-            refHeader.setPointerCapture(e.pointerId);
+            
+            if (isResizeModeActive) {
+                isResizingRef = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                startWidth = rect.width;
+                startHeight = rect.height;
+                refHeader.setPointerCapture(e.pointerId);
+            } else {
+                isDraggingRef = true;
+                refOffsetX = e.clientX - rect.left;
+                refOffsetY = e.clientY - rect.top;
+                refHeader.setPointerCapture(e.pointerId);
+            }
         });
 
-        refHeader.addEventListener('pointermove', (e) => {
-            if (!isDraggingRef) return;
-            let targetX = e.clientX - refOffsetX;
-            let targetY = e.clientY - refOffsetY;
-            
-            // Bordes simples de la pantalla
-            targetX = Math.max(0, Math.min(targetX, window.innerWidth - refWindow.offsetWidth));
-            targetY = Math.max(0, Math.min(targetY, window.innerHeight - refWindow.offsetHeight));
-            
-            refWindow.style.left = targetX + 'px';
-            refWindow.style.top = targetY + 'px';
+        document.getElementById('reference-content').addEventListener('pointerdown', (e) => {
+            if (!isResizeModeActive) return;
+            e.stopPropagation();
+            isResizingRef = true;
+            const rect = refWindow.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = rect.width;
+            startHeight = rect.height;
+            e.target.setPointerCapture(e.pointerId);
         });
 
-        const stopRefDrag = (e) => {
+        window.addEventListener('pointermove', (e) => {
+            if (isResizingRef) {
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                const sensitivity = 1.2; 
+                
+                let targetWidth = startWidth + (deltaX * sensitivity);
+                let targetHeight = startHeight + (deltaY * sensitivity);
+                
+                targetWidth = Math.max(120, Math.min(targetWidth, window.innerWidth * 0.9));
+                targetHeight = Math.max(90, Math.min(targetHeight, window.innerHeight * 0.9));
+                
+                refWindow.style.width = targetWidth + 'px';
+                refWindow.style.height = targetHeight + 'px';
+                return;
+            }
+
+            if (isDraggingRef) {
+                let targetX = e.clientX - refOffsetX;
+                let targetY = e.clientY - refOffsetY;
+                
+                targetX = Math.max(0, Math.min(targetX, window.innerWidth - refWindow.offsetWidth));
+                targetY = Math.max(0, Math.min(targetY, window.innerHeight - refWindow.offsetHeight));
+                
+                refWindow.style.left = targetX + 'px';
+                refWindow.style.top = targetY + 'px';
+            }
+        });
+
+        const stopRefActions = (e) => {
             if (isDraggingRef) {
                 isDraggingRef = false;
                 refHeader.releasePointerCapture(e.pointerId);
             }
+            if (isResizingRef) {
+                isResizingRef = false;
+                e.target.releasePointerCapture(e.pointerId);
+            }
         };
-        refHeader.addEventListener('pointerup', stopRefDrag);
-        refHeader.addEventListener('pointercancel', stopRefDrag);
+        
+        refHeader.addEventListener('pointerup', stopRefActions);
+        refHeader.addEventListener('pointercancel', stopRefActions);
+        document.getElementById('reference-content').addEventListener('pointerup', stopRefActions);
+        document.getElementById('reference-content').addEventListener('pointercancel', stopRefActions);
     </script>
 </body>
 </html>
