@@ -211,6 +211,61 @@
             pointer-events: none;
             z-index: 100;
         }
+
+        /* --- VENTANA DE REFERENCIA FLOTANTE --- */
+        #reference-window {
+            display: none;
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            width: 220px;
+            background: #18181a;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.1);
+            z-index: 300;
+            overflow: hidden;
+            flex-direction: column;
+            touch-action: none;
+        }
+        #reference-window.show { display: flex; }
+        
+        #reference-header {
+            background: #242426;
+            padding: 6px 10px;
+            font-size: 11px;
+            color: #a1a1aa;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        #reference-close {
+            background: transparent;
+            border: none;
+            color: #ff453a;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #reference-content {
+            width: 100%;
+            padding: 6px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #09090b;
+        }
+
+        #reference-img {
+            max-width: 100%;
+            max-height: 250px;
+            object-fit: contain;
+            border-radius: 6px;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -227,7 +282,7 @@
             <button id="btn-eraser" class="icon-btn" title="Goma de borrar">🧽</button>
             <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
             <div class="divider"></div>
-            <label for="fileInput" class="icon-btn" title="Insertar Imagen" style="cursor:pointer;">🖼️</label>
+            <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
             <input type="file" id="fileInput" accept="image/*">
             <button id="btn-reset-view" class="icon-btn" title="Centrar Lienzo">🏠</button>
             <button id="btn-layers" class="icon-btn" title="Capas">📑</button>
@@ -236,9 +291,19 @@
         </div>
     </div>
 
+    <div id="reference-window">
+        <div id="reference-header">
+            <span>Referencia</span>
+            <button id="reference-close">✕</button>
+        </div>
+        <div id="reference-content">
+            <img id="reference-img" src="" alt="Referencia">
+        </div>
+    </div>
+
     <div id="wheelContainer" class="dropdown-panel">
         <canvas id="colorWheel" width="110" height="110"></canvas>
-        <input type="range" id="brightnessSlider" style="width: 100%; height: 3px;" min="0" max="100" value="100">
+        <input type="range" id="brightnessSlider" style="width: 100%; height: 3px;" min="0" max="100" value="50">
     </div>
 
     <div id="layersContainer" class="dropdown-panel">
@@ -249,7 +314,7 @@
 
     <div id="sidebar-controls">
         <div class="slider-wrapper">
-            <span id="sizeVal" class="val-indicator">5px</span>
+            <span id="sizeVal" class="val-indicator">15px</span>
             <input type="range" id="brushSize" class="vertical-slider" min="1" max="150" value="15">
             <div class="slider-label">Tamaño</div>
         </div>
@@ -294,9 +359,9 @@
         let isDrawing = false;
         let isPanning = false;
         let currentColor = '#ff4a5a';
-        let currentSize = 5;
+        let currentSize = 15;
         let currentOpacity = 1;
-        let currentLayer = 1; // Capa activa por defecto
+        let currentLayer = 1; 
 
         let scale = 0.4; 
         let panX = (window.innerWidth - canvas.width * scale) / 2;
@@ -355,7 +420,6 @@
             updateTransform();
         });
 
-        // --- MANEJO DE MENÚS DESPLEGABLES ---
         const colorPreview = document.getElementById('colorPreview');
         const wheelContainer = document.getElementById('wheelContainer');
         const btnLayers = document.getElementById('btn-layers');
@@ -378,7 +442,6 @@
             if (!layersContainer.contains(e.target) && !btnLayers.contains(e.target)) layersContainer.classList.remove('show');
         });
 
-        // Cambio de capas
         document.querySelectorAll('.layer-item').forEach(item => {
             item.addEventListener('click', () => {
                 document.querySelectorAll('.layer-item').forEach(i => i.classList.remove('active'));
@@ -387,7 +450,7 @@
             });
         });
 
-        // Rueda de colores
+        // --- RUEDA DE COLORES MEJORADA ---
         const colorWheel = document.getElementById('colorWheel');
         const wheelCtx = colorWheel.getContext('2d');
         const brightnessSlider = document.getElementById('brightnessSlider');
@@ -395,7 +458,7 @@
 
         function drawColorWheel() {
             const radius = colorWheel.width / 2;
-            const brightness = brightnessSlider.value / 100;
+            const brightness = brightnessSlider.value / 100; 
             wheelCtx.clearRect(0,0,colorWheel.width,colorWheel.height);
             for (let y = 0; y < colorWheel.height; y++) {
                 for (let x = 0; x < colorWheel.width; x++) {
@@ -405,7 +468,8 @@
                         let angle = Math.atan2(dy, dx) * (180 / Math.PI);
                         if (angle < 0) angle += 360;
                         const sat = (distance / radius) * 100;
-                        wheelCtx.fillStyle = `hsl(${angle}, ${sat}%, ${50 * brightness}%)`;
+                        let lightness = brightness * 100; 
+                        wheelCtx.fillStyle = `hsl(${angle}, ${sat}%, ${lightness}%)`;
                         wheelCtx.fillRect(x, y, 1, 1);
                     }
                 }
@@ -428,7 +492,7 @@
         });
 
         function updateColor() {
-            currentColor = `hsl(${currentHue}, ${currentSat}%, ${50 * (brightnessSlider.value / 100)}%)`;
+            currentColor = `hsl(${currentHue}, ${currentSat}%, ${brightnessSlider.value}%)`;
             colorPreview.style.backgroundColor = currentColor;
         }
 
@@ -453,6 +517,7 @@
 
         container.addEventListener('pointerdown', (e) => {
             if(e.clientY < 52 || (e.clientX < 70 && e.clientY > window.innerHeight/2 - 120 && e.clientY < window.innerHeight/2 + 120)) return;
+            if (refWindow.contains(e.target)) return;
 
             activePointers.push(e);
 
@@ -512,9 +577,16 @@
                 
                 redrawEverything();
                 
-                // Renderizado en vivo temporal del trazo actual (asume la capa superior visualmente mientras se dibuja)
-                ctx.globalAlpha = currentMode === 'eraser' ? 1 : currentOpacity;
-                drawSmoothPath(currentPathPoints, currentMode === 'eraser' ? '#ffffff' : currentColor, currentSize);
+                if (currentMode === 'eraser') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.globalAlpha = currentOpacity;
+                    drawSmoothPath(currentPathPoints, 'rgba(0,0,0,1)', currentSize);
+                } else {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.globalAlpha = currentOpacity;
+                    drawSmoothPath(currentPathPoints, currentColor, currentSize);
+                }
+                ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 1;
             }
         });
@@ -522,12 +594,12 @@
         const handlePointerUp = (e) => {
             if (isDrawing && currentPathPoints.length > 0) {
                 const elementData = {
-                    type: 'path',
+                    type: currentMode === 'eraser' ? 'eraser' : 'path',
                     points: currentPathPoints,
-                    color: currentMode === 'eraser' ? '#ffffff' : currentColor,
+                    color: currentMode === 'eraser' ? null : currentColor,
                     size: currentSize,
-                    opacity: currentMode === 'eraser' ? 1 : currentOpacity,
-                    layer: currentLayer // Asociamos el trazo a la capa activa
+                    opacity: currentOpacity,
+                    layer: currentLayer 
                 };
                 
                 const newElementRef = push(linesRef, elementData);
@@ -572,26 +644,24 @@
 
         function drawSingleElement(data) {
             if (data.type === 'path' && data.points) {
+                ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
                 drawSmoothPath(data.points, data.color, data.size);
                 ctx.globalAlpha = 1;
-            } else if (data.type === 'image') {
-                const img = new Image();
-                img.onload = function() {
-                    const aspect = img.height / img.width;
-                    ctx.drawImage(img, data.x, data.y, data.w, data.w * aspect);
-                };
-                img.src = data.src;
+            } else if (data.type === 'eraser' && data.points) {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
+                drawSmoothPath(data.points, 'rgba(0,0,0,1)', data.size);
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1;
             }
         }
 
         function redrawEverything() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Convertimos el objeto en array para poder ordenarlo por capas
             const elementsArray = Object.values(allElements);
             
-            // Ordenamos: los elementos con menor número de capa van primero (abajo), los de mayor número van al final (arriba)
             elementsArray.sort((a, b) => {
                 const layerA = a.layer || 1;
                 const layerB = b.layer || 1;
@@ -637,26 +707,75 @@
             redrawEverything();
         });
 
+        // --- LÓGICA DE VENTANA DE REFERENCIA Y LOCALSTORAGE ---
+        const refWindow = document.getElementById('reference-window');
+        const refHeader = document.getElementById('reference-header');
+        const refImg = document.getElementById('reference-img');
+        const refClose = document.getElementById('reference-close');
+
+        let isDraggingRef = false;
+        let refOffsetX = 0;
+        let refOffsetY = 0;
+
+        // Cargar imagen guardada localmente si existe
+        const savedImg = localStorage.getItem('gloart_ref_img');
+        if (savedImg) {
+            refImg.src = savedImg;
+            refWindow.classList.add('show');
+        }
+
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(event) {
-                const viewCenterX = (window.innerWidth / 2 - panX) / scale;
-                const viewCenterY = (window.innerHeight / 2 - panY) / scale;
-                const imgData = {
-                    type: 'image',
-                    src: event.target.result,
-                    x: viewCenterX - 200,
-                    y: viewCenterY - 200,
-                    w: 400,
-                    layer: currentLayer // Las imágenes también respetan la capa actual
-                };
-                const newElementRef = push(linesRef, imgData);
-                myLastKeys.push(newElementRef.key);
+                const base64Data = event.target.result;
+                refImg.src = base64Data;
+                refWindow.classList.add('show');
+                try {
+                    localStorage.setItem('gloart_ref_img', base64Data);
+                } catch(e) {
+                    console.warn("La imagen es demasiado grande para el localStorage.");
+                }
             };
             reader.readAsDataURL(file);
         });
+
+        refClose.addEventListener('click', () => {
+            refWindow.classList.remove('show');
+            refImg.src = "";
+            localStorage.removeItem('gloart_ref_img');
+        });
+
+        refHeader.addEventListener('pointerdown', (e) => {
+            isDraggingRef = true;
+            const rect = refWindow.getBoundingClientRect();
+            refOffsetX = e.clientX - rect.left;
+            refOffsetY = e.clientY - rect.top;
+            refHeader.setPointerCapture(e.pointerId);
+        });
+
+        refHeader.addEventListener('pointermove', (e) => {
+            if (!isDraggingRef) return;
+            let targetX = e.clientX - refOffsetX;
+            let targetY = e.clientY - refOffsetY;
+            
+            // Bordes simples de la pantalla
+            targetX = Math.max(0, Math.min(targetX, window.innerWidth - refWindow.offsetWidth));
+            targetY = Math.max(0, Math.min(targetY, window.innerHeight - refWindow.offsetHeight));
+            
+            refWindow.style.left = targetX + 'px';
+            refWindow.style.top = targetY + 'px';
+        });
+
+        const stopRefDrag = (e) => {
+            if (isDraggingRef) {
+                isDraggingRef = false;
+                refHeader.releasePointerCapture(e.pointerId);
+            }
+        };
+        refHeader.addEventListener('pointerup', stopRefDrag);
+        refHeader.addEventListener('pointercancel', stopRefDrag);
     </script>
 </body>
 </html>
