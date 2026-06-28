@@ -212,7 +212,7 @@
             z-index: 100;
         }
 
-        /* --- VENTANA DE REFERENCIA FLOTANTE MODIFICADA --- */
+        /* --- VENTANA DE REFERENCIA FLOTANTE --- */
         #reference-window {
             display: none;
             position: absolute;
@@ -233,7 +233,6 @@
         }
         #reference-window.show { display: flex; }
         
-        /* Estado activo cuando se pulsa el botón de redimensión */
         #reference-window.resize-mode {
             border: 2px solid #007aff !important;
             box-shadow: 0 0 15px rgba(0, 122, 255, 0.5);
@@ -285,7 +284,6 @@
             position: relative;
         }
 
-        /* Cuando está activo el modo redimensión cambiamos el cursor de todo el marco */
         #reference-window.resize-mode #reference-content,
         #reference-window.resize-mode #reference-header {
             cursor: se-resize !important;
@@ -300,7 +298,7 @@
             transition: max-height 0.1s;
         }
         #reference-window.resize-mode #reference-img {
-            max-height: 100% !important; /* Permite romper el límite original al redimensionar */
+            max-height: 100% !important;
         }
     </style>
 </head>
@@ -317,6 +315,7 @@
             <button id="btn-draw" class="icon-btn active" title="Pincel">✏️</button>
             <button id="btn-eraser" class="icon-btn" title="Goma de borrar">🧽</button>
             <button id="btn-picker" class="icon-btn" title="Gotero / Selector de color">🧪</button>
+            <button id="btn-bucket" class="icon-btn" title="Balde de pintura">🪣</button>
             <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
             <div class="divider"></div>
             <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
@@ -393,13 +392,12 @@
 
         const container = document.getElementById('canvas-container');
         const canvas = document.getElementById('mural');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         
-        // --- LIENZO AUXILIAR (OFFSCREEN CANVAS) PARA CAPAS ---
         const offscreenCanvas = document.createElement('canvas');
         offscreenCanvas.width = canvas.width;
         offscreenCanvas.height = canvas.height;
-        const oCtx = offscreenCanvas.getContext('2d');
+        const oCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
         oCtx.lineJoin = 'round';
         oCtx.lineCap = 'round';
 
@@ -433,6 +431,7 @@
         const btnDraw = document.getElementById('btn-draw');
         const btnEraser = document.getElementById('btn-eraser');
         const btnPicker = document.getElementById('btn-picker');
+        const btnBucket = document.getElementById('btn-bucket');
         const btnPan = document.getElementById('btn-pan');
         const brushSizeInput = document.getElementById('brushSize');
         const brushOpacityInput = document.getElementById('brushOpacity');
@@ -442,16 +441,18 @@
 
         function setMode(mode) {
             currentMode = mode;
-            [btnDraw, btnEraser, btnPicker, btnPan].forEach(b => b.classList.remove('active'));
+            [btnDraw, btnEraser, btnPicker, btnBucket, btnPan].forEach(b => b?.classList.remove('active'));
             if(mode === 'draw') btnDraw.classList.add('active');
             if(mode === 'eraser') btnEraser.classList.add('active');
             if(mode === 'picker') btnPicker.classList.add('active');
+            if(mode === 'bucket') btnBucket.classList.add('active');
             if(mode === 'pan') btnPan.classList.add('active');
         }
 
         btnDraw.addEventListener('click', () => setMode('draw'));
         btnEraser.addEventListener('click', () => setMode('eraser'));
         btnPicker.addEventListener('click', () => setMode('picker'));
+        btnBucket.addEventListener('click', () => setMode('bucket'));
         btnPan.addEventListener('click', () => setMode('pan'));
         
         brushSizeInput.addEventListener('input', (e) => {
@@ -501,7 +502,7 @@
             });
         });
 
-        // --- RUEDA DE COLORES MEJORADA ---
+        // --- RUEDA DE COLORES ---
         const colorWheel = document.getElementById('colorWheel');
         const wheelCtx = colorWheel.getContext('2d');
         const brightnessSlider = document.getElementById('brightnessSlider');
@@ -547,7 +548,6 @@
             colorPreview.style.backgroundColor = currentColor;
         }
 
-        // --- CONVERSIÓN DE RGB A HSL (Para el Gotero) ---
         function rgbToHsl(r, g, b) {
             r /= 255; g /= 255; b /= 255;
             const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -588,7 +588,73 @@
 
         function getEventCoords(e) {
             const rect = canvas.getBoundingClientRect();
-            return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
+            return { x: Math.floor((e.clientX - rect.left) / scale), y: Math.floor((e.clientY - rect.top) / scale) };
+        }
+
+        // --- CALCULA RANGOS HORIZONTALES (SCANLINE FLOOD FILL) ---
+        // Lee del lienzo unificado (ctx) para detectar bordes de cualquier capa.
+        function getFloodFillSpans(visibleCtx, startX, startY, tolerance = 35) {
+            const width = canvas.width;
+            const height = canvas.height;
+            if (startX < 0 || startX >= width || startY < 0 || startY >= height) return [];
+
+            const imgData = visibleCtx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+
+            const startIdx = (startY * width + startX) * 4;
+            const startR = data[startIdx];
+            const startG = data[startIdx + 1];
+            const startB = data[startIdx + 2];
+            const startA = data[startIdx + 3];
+
+            const visited = new Uint8Array(width * height);
+            const spans = [];
+            const stack = [[startX, startY]];
+
+            function matches(x, y) {
+                if (x < 0 || x >= width || y < 0 || y >= height) return false;
+                const idx = (y * width + x) * 4;
+                return Math.abs(data[idx] - startR) <= tolerance &&
+                       Math.abs(data[idx+1] - startG) <= tolerance &&
+                       Math.abs(data[idx+2] - startB) <= tolerance &&
+                       Math.abs(data[idx+3] - startA) <= tolerance;
+            }
+
+            while (stack.length > 0) {
+                const [cx, cy] = stack.pop();
+                if (visited[cy * width + cx]) continue;
+
+                let lx = cx;
+                while (lx >= 0 && matches(lx, cy) && !visited[cy * width + lx]) { lx--; }
+                lx++;
+
+                let rx = cx;
+                while (rx < width && matches(rx, cy) && !visited[cy * width + rx]) { rx++; }
+                rx--;
+
+                // Margen leve de relleno para ocultar espacios en blanco del anti-aliasing
+                spans.push({ y: cy, x1: Math.max(0, lx - 1), x2: Math.min(width - 1, rx + 1) });
+
+                for (let x = lx; x <= rx; x++) { visited[cy * width + x] = 1; }
+
+                if (cy > 0) {
+                    let inside = false;
+                    for (let x = lx; x <= rx; x++) {
+                        if (matches(x, cy - 1) && !visited[(cy - 1) * width + x]) {
+                            if (!inside) { stack.push([x, cy - 1]); inside = true; }
+                        } else { inside = false; }
+                    }
+                }
+                if (cy < height - 1) {
+                    let inside = false;
+                    for (let x = lx; x <= rx; x++) {
+                        if (matches(x, cy + 1) && !visited[(cy + 1) * width + x]) {
+                            if (!inside) { stack.push([x, cy + 1]); inside = true; }
+                        } else { inside = false; }
+                    }
+                }
+            }
+            return spans;
         }
 
         container.addEventListener('pointerdown', (e) => {
@@ -616,21 +682,17 @@
                     return;
                 }
                 
-                // --- ACCIÓN DEL GOTERO ---
+                const pt = getEventCoords(e);
+
                 if (currentMode === 'picker') {
-                    const pt = getEventCoords(e);
                     if (pt.x >= 0 && pt.x <= canvas.width && pt.y >= 0 && pt.y <= canvas.height) {
-                        const pixel = ctx.getImageData(Math.floor(pt.x), Math.floor(pt.y), 1, 1).data;
-                        
+                        const pixel = ctx.getImageData(pt.x, pt.y, 1, 1).data;
                         if (pixel[3] === 0) {
                             currentHue = 0; currentSat = 0; brightnessSlider.value = 100;
                         } else {
                             const hsl = rgbToHsl(pixel[0], pixel[1], pixel[2]);
-                            currentHue = hsl.h;
-                            currentSat = hsl.s;
-                            brightnessSlider.value = hsl.l;
+                            currentHue = hsl.h; currentSat = hsl.s; brightnessSlider.value = hsl.l;
                         }
-                        
                         updateColor();
                         drawColorWheel();
                         setMode('draw'); 
@@ -638,9 +700,27 @@
                     return;
                 }
 
+                // --- CLIC CON BALDE DE PINTURA ---
+                if (currentMode === 'bucket') {
+                    // Calculamos los rangos una sola vez leyendo del lienzo maestro unificado
+                    const computedSpans = getFloodFillSpans(ctx, pt.x, pt.y);
+                    if (computedSpans.length === 0) return;
+
+                    const elementData = {
+                        type: 'bucket',
+                        spans: computedSpans,
+                        color: currentColor,
+                        opacity: currentOpacity,
+                        layer: currentLayer
+                    };
+                    const newElementRef = push(linesRef, elementData);
+                    myLastKeys.push(newElementRef.key);
+                    redoStack = [];
+                    return;
+                }
+
                 if ((e.button === 0 || e.pointerType === 'touch') && (currentMode === 'draw' || currentMode === 'eraser')) {
                     isDrawing = true;
-                    const pt = getEventCoords(e);
                     currentPathPoints = [pt]; 
                 }
             }
@@ -673,8 +753,6 @@
             if (isDrawing && activePointers.length === 1) {
                 const pt = getEventCoords(e);
                 currentPathPoints.push(pt);
-                
-                // Redibujamos todo integrando el trazo actual dinámicamente
                 redrawEverything();
             }
         });
@@ -719,13 +797,11 @@
             }
 
             targetCtx.moveTo(points[0].x, points[0].y);
-            
             for (let i = 1; i < points.length - 1; i++) {
                 const xc = (points[i].x + points[i+1].x) / 2;
                 const yc = (points[i].y + points[i+1].y) / 2;
                 targetCtx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
             }
-            
             targetCtx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
             targetCtx.stroke();
         }
@@ -739,24 +815,29 @@
                 targetCtx.globalCompositeOperation = 'destination-out';
                 targetCtx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
                 drawSmoothPath(targetCtx, data.points, 'rgba(0,0,0,1)', data.size);
+            } else if (data.type === 'bucket' && data.spans) {
+                // --- RENDERIZADO ULTRA RÁPIDO CON RECTÁNGULOS ---
+                targetCtx.fillStyle = data.color;
+                targetCtx.globalCompositeOperation = 'source-over';
+                targetCtx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
+                for (let i = 0; i < data.spans.length; i++) {
+                    const span = data.spans[i];
+                    targetCtx.fillRect(span.x1, span.y, span.x2 - span.x1 + 1, 1);
+                }
             }
             targetCtx.globalCompositeOperation = 'source-over';
             targetCtx.globalAlpha = 1;
         }
 
-        // --- REDIBUJADO AVANZADO POR CAPAS AISLADAS ---
         function redrawEverything() {
-            // Limpiar lienzo principal
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Agrupar elementos guardados por sus respectivas capas
             const layers = { 1: [], 2: [], 3: [] };
             Object.values(allElements).forEach(element => {
                 const lyr = element.layer || 1;
                 if (layers[lyr]) layers[lyr].push(element);
             });
 
-            // Si el usuario está dibujando en este momento, añadimos el trazo temporal a su capa
             if (isDrawing && currentPathPoints.length > 0) {
                 const tempElement = {
                     type: currentMode === 'eraser' ? 'eraser' : 'path',
@@ -768,20 +849,16 @@
                 layers[currentLayer].push(tempElement);
             }
             
-            // Renderizar secuencialmente capa por capa de abajo hacia arriba
             [1, 2, 3].forEach(lyrNum => {
                 const elements = layers[lyrNum];
                 if (elements.length === 0) return;
                 
-                // Limpiar el lienzo auxiliar para esta capa específica
                 oCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
                 
-                // Dibujar todos los trazos y borradores correspondientes en el lienzo auxiliar
                 elements.forEach(element => {
                     drawSingleElement(oCtx, element);
                 });
                 
-                // Transferir la capa terminada y limpia al lienzo principal
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 1;
                 ctx.drawImage(offscreenCanvas, 0, 0);
@@ -822,7 +899,7 @@
             redrawEverything();
         });
 
-        // --- LÓGICA DE VENTANA DE REFERENCIA Y LOCALSTORAGE ---
+        // --- LÓGICA DE VENTANA DE REFERENCIA ---
         const refWindow = document.getElementById('reference-window');
         const refHeader = document.getElementById('reference-header');
         const refImg = document.getElementById('reference-img');
@@ -896,7 +973,7 @@
             } else {
                 isDraggingRef = true;
                 refOffsetX = e.clientX - rect.left;
-                refOffsetY = e.clientY - rect.top;
+                refOffsetY = e.clientY - refOffsetY;
                 refHeader.setPointerCapture(e.pointerId);
             }
         });
@@ -960,4 +1037,3 @@
     </script>
 </body>
 </html>
-
