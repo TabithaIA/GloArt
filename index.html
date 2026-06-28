@@ -93,11 +93,11 @@
         }
         #colorPreview:active { transform: scale(0.9); }
 
-        #wheelContainer {
+        /* PANEL FLOTANTE COMÚN */
+        .dropdown-panel {
             display: none;
             position: absolute;
             top: 48px;
-            right: 12px;
             background: #18181a;
             padding: 10px;
             border-radius: 12px;
@@ -106,9 +106,34 @@
             z-index: 200;
             flex-direction: column;
             gap: 8px;
-            align-items: center;
         }
-        #wheelContainer.show { display: flex; }
+        .dropdown-panel.show { display: flex; }
+
+        #wheelContainer { right: 12px; align-items: center; }
+
+        /* CONTENEDOR DE CAPAS */
+        #layersContainer {
+            right: 45px;
+            width: 140px;
+        }
+        .layer-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: background 0.2s;
+        }
+        .layer-item:hover { background: rgba(255,255,255,0.08); }
+        .layer-item.active {
+            border-color: #30d158;
+            background: rgba(48, 209, 88, 0.1);
+            color: #30d158;
+        }
 
         #sidebar-controls {
             position: absolute;
@@ -205,14 +230,21 @@
             <label for="fileInput" class="icon-btn" title="Insertar Imagen" style="cursor:pointer;">🖼️</label>
             <input type="file" id="fileInput" accept="image/*">
             <button id="btn-reset-view" class="icon-btn" title="Centrar Lienzo">🏠</button>
+            <button id="btn-layers" class="icon-btn" title="Capas">📑</button>
             <div class="divider"></div>
             <div id="colorPreview" style="background-color: #ff4a5a;"></div>
         </div>
     </div>
 
-    <div id="wheelContainer">
+    <div id="wheelContainer" class="dropdown-panel">
         <canvas id="colorWheel" width="110" height="110"></canvas>
         <input type="range" id="brightnessSlider" style="width: 100%; height: 3px;" min="0" max="100" value="100">
+    </div>
+
+    <div id="layersContainer" class="dropdown-panel">
+        <div class="layer-item" data-layer="3">Capas 3</div>
+        <div class="layer-item" data-layer="2">Capa 2</div>
+        <div class="layer-item active" data-layer="1">Capa 1 (Base)</div>
     </div>
 
     <div id="sidebar-controls">
@@ -230,7 +262,6 @@
     </div>
 
     <div id="canvas-container">
-        <!-- SE OPTIMIZÓ EL TAMAÑO A UN LIENZO ESTABLE DE 3K -->
         <canvas id="mural" width="4096" height="4096"></canvas>
     </div>
 
@@ -265,8 +296,8 @@
         let currentColor = '#ff4a5a';
         let currentSize = 5;
         let currentOpacity = 1;
+        let currentLayer = 1; // Capa activa por defecto
 
-        // Se ajustó la escala inicial (de 0.12 a 0.4) para el nuevo tamaño
         let scale = 0.4; 
         let panX = (window.innerWidth - canvas.width * scale) / 2;
         let panY = (window.innerHeight - canvas.height * scale) / 2;
@@ -324,17 +355,43 @@
             updateTransform();
         });
 
+        // --- MANEJO DE MENÚS DESPLEGABLES ---
         const colorPreview = document.getElementById('colorPreview');
         const wheelContainer = document.getElementById('wheelContainer');
+        const btnLayers = document.getElementById('btn-layers');
+        const layersContainer = document.getElementById('layersContainer');
+
+        colorPreview.addEventListener('pointerdown', (e) => { 
+            e.stopPropagation(); 
+            layersContainer.classList.remove('show');
+            wheelContainer.classList.toggle('show'); 
+        });
+
+        btnLayers.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            wheelContainer.classList.remove('show');
+            layersContainer.classList.toggle('show');
+        });
+
+        document.addEventListener('pointerdown', (e) => {
+            if (!wheelContainer.contains(e.target) && e.target !== colorPreview) wheelContainer.classList.remove('show');
+            if (!layersContainer.contains(e.target) && !btnLayers.contains(e.target)) layersContainer.classList.remove('show');
+        });
+
+        // Cambio de capas
+        document.querySelectorAll('.layer-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.layer-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                currentLayer = parseInt(item.getAttribute('data-layer'));
+            });
+        });
+
+        // Rueda de colores
         const colorWheel = document.getElementById('colorWheel');
         const wheelCtx = colorWheel.getContext('2d');
         const brightnessSlider = document.getElementById('brightnessSlider');
         let currentHue = 0, currentSat = 100;
-
-        colorPreview.addEventListener('pointerdown', (e) => { e.stopPropagation(); wheelContainer.classList.toggle('show'); });
-        document.addEventListener('pointerdown', (e) => {
-            if (!wheelContainer.contains(e.target) && e.target !== colorPreview) wheelContainer.classList.remove('show');
-        });
 
         function drawColorWheel() {
             const radius = colorWheel.width / 2;
@@ -455,6 +512,7 @@
                 
                 redrawEverything();
                 
+                // Renderizado en vivo temporal del trazo actual (asume la capa superior visualmente mientras se dibuja)
                 ctx.globalAlpha = currentMode === 'eraser' ? 1 : currentOpacity;
                 drawSmoothPath(currentPathPoints, currentMode === 'eraser' ? '#ffffff' : currentColor, currentSize);
                 ctx.globalAlpha = 1;
@@ -468,7 +526,8 @@
                     points: currentPathPoints,
                     color: currentMode === 'eraser' ? '#ffffff' : currentColor,
                     size: currentSize,
-                    opacity: currentMode === 'eraser' ? 1 : currentOpacity
+                    opacity: currentMode === 'eraser' ? 1 : currentOpacity,
+                    layer: currentLayer // Asociamos el trazo a la capa activa
                 };
                 
                 const newElementRef = push(linesRef, elementData);
@@ -528,7 +587,18 @@
 
         function redrawEverything() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            Object.values(allElements).forEach(element => {
+            
+            // Convertimos el objeto en array para poder ordenarlo por capas
+            const elementsArray = Object.values(allElements);
+            
+            // Ordenamos: los elementos con menor número de capa van primero (abajo), los de mayor número van al final (arriba)
+            elementsArray.sort((a, b) => {
+                const layerA = a.layer || 1;
+                const layerB = b.layer || 1;
+                return layerA - layerB;
+            });
+
+            elementsArray.forEach(element => {
                 drawSingleElement(element);
             });
         }
@@ -579,7 +649,8 @@
                     src: event.target.result,
                     x: viewCenterX - 200,
                     y: viewCenterY - 200,
-                    w: 400
+                    w: 400,
+                    layer: currentLayer // Las imágenes también respetan la capa actual
                 };
                 const newElementRef = push(linesRef, imgData);
                 myLastKeys.push(newElementRef.key);
