@@ -877,14 +877,14 @@
             const backupData = allElements[keyToUndo];
             if (backupData) {
                 redoStack.push({ key: keyToUndo, data: backupData });
-                remove(ref(db, `mural_elements/${keyToUndo}`));
+                remove(ref(db, `salas/${roomName}/mural_elements/${keyToUndo}`));
             }
         });
 
         document.getElementById('btn-redo').addEventListener('click', () => {
             if (redoStack.length === 0) return;
             const action = redoStack.pop();
-            set(ref(db, `mural_elements/${action.key}`), action.data);
+            set(ref(db, `salas/${roomName}/mural_elements/${action.key}`), action.data);
             myLastKeys.push(action.key);
         });
 
