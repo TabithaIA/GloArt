@@ -346,9 +346,9 @@
     </div>
 
     <div id="layersContainer" class="dropdown-panel">
-        <div class="layer-item" data-layer="3">Capa Arriba</div>
+        <div class="layer-item active" data-layer="3">Capa Arriba</div>
         <div class="layer-item" data-layer="2">Capa Centro</div>
-        <div class="layer-item active" data-layer="1">Capa Abajo (Base)</div>
+        <div class="layer-item" data-layer="1">Capa Abajo (Base)</div>
     </div>
 
     <div id="sidebar-controls">
@@ -411,9 +411,9 @@
         let isDrawing = false;
         let isPanning = false;
         let currentColor = '#ff4a5a';
-        let currentSize = 15;
+        let currentSize = 5;
         let currentOpacity = 1;
-        let currentLayer = 1; 
+        let currentLayer = 3; 
 
         let scale = 0.4; 
         let panX = (window.innerWidth - canvas.width * scale) / 2;
