@@ -346,9 +346,16 @@
     </div>
 
     <div id="layersContainer" class="dropdown-panel">
-        <div class="layer-item active" data-layer="3">Capa Arriba</div>
-        <div class="layer-item" data-layer="2">Capa Centro</div>
-        <div class="layer-item" data-layer="1">Capa Abajo (Base)</div>
+        <div class="layer-item active" data-layer="10">Capa 10 (arriba)</div>
+        <div class="layer-item" data-layer="9">Capa 9</div>
+        <div class="layer-item" data-layer="8">Capa 8</div>
+        <div class="layer-item" data-layer="7">Capa 7</div>
+        <div class="layer-item" data-layer="6">Capa 6</div>
+        <div class="layer-item" data-layer="5">Capa 5</div>
+        <div class="layer-item" data-layer="4">Capa 4</div>
+        <div class="layer-item" data-layer="3">Capa 3</div>
+        <div class="layer-item" data-layer="2">Capa 2</div>
+        <div class="layer-item" data-layer="1">Capa 1</div>
     </div>
 
     <div id="sidebar-controls">
@@ -838,7 +845,7 @@
         function redrawEverything() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            const layers = { 1: [], 2: [], 3: [] };
+            const layers = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [], 10: [] };
             Object.values(allElements).forEach(element => {
                 const lyr = element.layer || 1;
                 if (layers[lyr]) layers[lyr].push(element);
