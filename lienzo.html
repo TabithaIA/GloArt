@@ -21,6 +21,12 @@
             position: relative;
             overflow: hidden;
             background-color: #09090b;
+
+            background-image:
+            linear-gradient(to right, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 10px 10px;
+            background-position: center;
         }
         
         canvas#mural {
@@ -55,7 +61,7 @@
         .bar-group {
             display: flex;
             align-items: center;
-            gap: 1px;
+            gap: 8px;
         }
 
         .icon-btn {
@@ -306,23 +312,22 @@
 
     <div id="top-bar">
         <div class="bar-group">
-            <button id="btn-undo" class="icon-btn" title="Deshacer">⤺</button>
-            <button id="btn-redo" class="icon-btn" title="Rehacer">⤻</button>
+            <button id="btn-save" class="icon-btn" title="Guardar como PNG">📥</button>
             <button id="btn-clear" class="icon-btn" style="color: #ff453a;" title="Limpiar lienzo">🗑️</button>
+            <div class="divider"></div>
+            <button id="btn-bucket" class="icon-btn" title="Balde de pintura">🪣</button>
+            <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
+            <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
+            <input type="file" id="fileInput" accept="image/*">
         </div>
 
         <div class="bar-group">
             <button id="btn-draw" class="icon-btn active" title="Pincel">✏️</button>
-            <button id="btn-eraser" class="icon-btn" title="Goma de borrar">🧽</button>
             <button id="btn-picker" class="icon-btn" title="Gotero / Selector de color">🧪</button>
-            <button id="btn-bucket" class="icon-btn" title="Balde de pintura">🪣</button>
-            <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
-            <div class="divider"></div>
-            <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
-            <input type="file" id="fileInput" accept="image/*">
-            <button id="btn-reset-view" class="icon-btn" title="Centrar Lienzo">🏠</button>
+            <button id="btn-eraser" class="icon-btn" title="Goma de borrar">🧽</button>
             <button id="btn-layers" class="icon-btn" title="Capas">📑</button>
             <div class="divider"></div>
+
             <div id="colorPreview" style="background-color: #ff4a5a;"></div>
         </div>
     </div>
@@ -361,15 +366,17 @@
     <div id="sidebar-controls">
         <div class="slider-wrapper">
             <span id="sizeVal" class="val-indicator">5px</span>
-            <input type="range" id="brushSize" class="vertical-slider" min="1" max="150" value="15">
-            <div class="slider-label">Tamaño</div>
+            <input type="range" id="brushSize" class="vertical-slider" min="1" max="150" value="5">
+            <div class="slider-label"></div>
         </div>
         <div style="height: 6px;"></div>
         <div class="slider-wrapper">
             <span id="opacityVal" class="val-indicator">100%</span>
             <input type="range" id="brushOpacity" class="vertical-slider" min="10" max="100" value="100">
-            <div class="slider-label">Opacidad</div>
+            <div class="slider-label"></div>
         </div>
+        <button id="btn-undo" class="icon-btn" title="Deshacer">⤺</button>
+        <button id="btn-redo" class="icon-btn" title="Rehacer">⤻</button>
     </div>
 
     <div id="canvas-container">
@@ -1051,6 +1058,20 @@
     // Al final del script o donde inicialices la app
     document.getElementById('status-bar').textContent = `Sala: ${roomName} | Lienzo 1000 × 1000`;
 
+    // --- LÓGICA PARA GUARDAR EL LIENZO EN PNG ---
+document.getElementById('btn-save').addEventListener('click', () => {
+    // Creamos un enlace temporal en memoria
+    const link = document.createElement('a');
+    
+    // Asignamos el nombre del archivo usando el nombre de la sala actual
+    link.download = `gloart_${roomName}.png`;
+    
+    // Convertimos el contenido del canvas a un formato de URL de datos PNG
+    link.href = canvas.toDataURL('image/png');
+    
+    // Simulamos el clic para iniciar la descarga automática
+    link.click();
+});
     </script>
 </body>
 </html>
