@@ -319,6 +319,7 @@
             <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
             <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
             <input type="file" id="fileInput" accept="image/*">
+            <button id="btn-reset-view" class="icon-btn" title="Reiniciar Vista"></button>
         </div>
 
         <div class="bar-group">
@@ -400,14 +401,13 @@
             measurementId: "G-1VJ9FNMF72"
         };
 
-                const app = initializeApp(firebaseConfig);
+        const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
         // --- DETECTAR LA SALA DESDE LA URL ---
         const urlParams = new URLSearchParams(window.location.search);
-        const roomName = urlParams.get('sala') || 'general'; // Si no hay código, va a 'general'
+        const roomName = urlParams.get('sala') || 'general'; 
 
-        // Cambiamos la referencia para que apunte a 'salas/nombre_de_la_sala/mural_elements'
         const linesRef = ref(db, `salas/${roomName}/mural_elements`);
 
         const container = document.getElementById('canvas-container');
@@ -611,8 +611,6 @@
             return { x: Math.floor((e.clientX - rect.left) / scale), y: Math.floor((e.clientY - rect.top) / scale) };
         }
 
-        // --- CALCULA RANGOS HORIZONTALES (SCANLINE FLOOD FILL) ---
-        // Lee del lienzo unificado (ctx) para detectar bordes de cualquier capa.
         function getFloodFillSpans(visibleCtx, startX, startY, tolerance = 35) {
             const width = canvas.width;
             const height = canvas.height;
@@ -652,7 +650,6 @@
                 while (rx < width && matches(rx, cy) && !visited[cy * width + rx]) { rx++; }
                 rx--;
 
-                // Margen leve de relleno para ocultar espacios en blanco del anti-aliasing
                 spans.push({ y: cy, x1: Math.max(0, lx - 1), x2: Math.min(width - 1, rx + 1) });
 
                 for (let x = lx; x <= rx; x++) { visited[cy * width + x] = 1; }
@@ -720,9 +717,7 @@
                     return;
                 }
 
-                // --- CLIC CON BALDE DE PINTURA ---
                 if (currentMode === 'bucket') {
-                    // Calculamos los rangos una sola vez leyendo del lienzo maestro unificado
                     const computedSpans = getFloodFillSpans(ctx, pt.x, pt.y);
                     if (computedSpans.length === 0) return;
 
@@ -836,7 +831,6 @@
                 targetCtx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
                 drawSmoothPath(targetCtx, data.points, 'rgba(0,0,0,1)', data.size);
             } else if (data.type === 'bucket' && data.spans) {
-                // --- RENDERIZADO ULTRA RÁPIDO CON RECTÁNGULOS ---
                 targetCtx.fillStyle = data.color;
                 targetCtx.globalCompositeOperation = 'source-over';
                 targetCtx.globalAlpha = data.opacity !== undefined ? data.opacity : 1;
@@ -993,7 +987,7 @@
             } else {
                 isDraggingRef = true;
                 refOffsetX = e.clientX - rect.left;
-                refOffsetY = e.clientY - refOffsetY;
+                refOffsetY = e.clientY - rect.top; // <-- Corrección aquí
                 refHeader.setPointerCapture(e.pointerId);
             }
         });
@@ -1055,23 +1049,15 @@
         document.getElementById('reference-content').addEventListener('pointerup', stopRefActions);
         document.getElementById('reference-content').addEventListener('pointercancel', stopRefActions);
 
-    // Al final del script o donde inicialices la app
-    document.getElementById('status-bar').textContent = `Sala: ${roomName} | Lienzo 1000 × 1000`;
+        document.getElementById('status-bar').textContent = `Sala: ${roomName} | Lienzo 1000 × 1000`;
 
-    // --- LÓGICA PARA GUARDAR EL LIENZO EN PNG ---
-document.getElementById('btn-save').addEventListener('click', () => {
-    // Creamos un enlace temporal en memoria
-    const link = document.createElement('a');
-    
-    // Asignamos el nombre del archivo usando el nombre de la sala actual
-    link.download = `gloart_${roomName}.png`;
-    
-    // Convertimos el contenido del canvas a un formato de URL de datos PNG
-    link.href = canvas.toDataURL('image/png');
-    
-    // Simulamos el clic para iniciar la descarga automática
-    link.click();
-});
+        // --- LÓGICA PARA GUARDAR EL LIENZO EN PNG ---
+        document.getElementById('btn-save').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `gloart_${roomName}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
     </script>
 </body>
 </html>
