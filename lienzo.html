@@ -309,6 +309,7 @@
     </style>
 </head>
 <body>
+  <button id="btn-reset-view"></button>
 
     <div id="top-bar">
         <div class="bar-group">
@@ -316,15 +317,13 @@
             <button id="btn-clear" class="icon-btn" style="color: #ff453a;" title="Limpiar lienzo">🗑️</button>
             <div class="divider"></div>
             <button id="btn-bucket" class="icon-btn" title="Balde de pintura">🪣</button>
-            <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐️</button>
             <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
             <input type="file" id="fileInput" accept="image/*">
-            <button id="btn-reset-view" class="icon-btn" title="Reiniciar Vista"></button>
         </div>
 
         <div class="bar-group">
             <button id="btn-draw" class="icon-btn active" title="Pincel">✏️</button>
-            <button id="btn-picker" class="icon-btn" title="Gotero / Selector de color">🧪</button>
+            <button id="btn-pan" class="icon-btn" title="Mover Lienzo">🖐</button>
             <button id="btn-eraser" class="icon-btn" title="Goma de borrar">🧽</button>
             <button id="btn-layers" class="icon-btn" title="Capas">📑</button>
             <div class="divider"></div>
@@ -370,6 +369,7 @@
             <input type="range" id="brushSize" class="vertical-slider" min="1" max="150" value="5">
             <div class="slider-label"></div>
         </div>
+        <button id="btn-picker" class="icon-btn" title="Gotero / Selector de color">🧪</button>
         <div style="height: 6px;"></div>
         <div class="slider-wrapper">
             <span id="opacityVal" class="val-indicator">100%</span>
