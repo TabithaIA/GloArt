@@ -99,6 +99,20 @@
         }
         #colorPreview:active { transform: scale(0.9); }
 
+        /* BURBUJA ARRASTRABLE (COLOR DROP) */
+        #color-drop-bubble {
+            display: none;
+            position: fixed;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid #ffffff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+        }
+
         /* PANEL FLOTANTE COMÚN */
         .dropdown-panel {
             display: none;
@@ -306,17 +320,19 @@
         #reference-window.resize-mode #reference-img {
             max-height: 100% !important;
         }
+        #btn-reset-view { display: none; }
     </style>
 </head>
 <body>
-  <button id="btn-reset-view"></button>
+    <button id="btn-reset-view"></button>
+
+    <div id="color-drop-bubble"></div>
 
     <div id="top-bar">
         <div class="bar-group">
             <button id="btn-save" class="icon-btn" title="Guardar como PNG">📥</button>
             <button id="btn-clear" class="icon-btn" style="color: #ff453a;" title="Limpiar lienzo">🗑️</button>
             <div class="divider"></div>
-            <button id="btn-bucket" class="icon-btn" title="Balde de pintura">🪣</button>
             <label for="fileInput" class="icon-btn" title="Insertar Imagen de Referencia" style="cursor:pointer;">🖼️</label>
             <input type="file" id="fileInput" accept="image/*">
         </div>
@@ -404,7 +420,6 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- DETECTAR LA SALA DESDE LA URL ---
         const urlParams = new URLSearchParams(window.location.search);
         const roomName = urlParams.get('sala') || 'general'; 
 
@@ -451,7 +466,6 @@
         const btnDraw = document.getElementById('btn-draw');
         const btnEraser = document.getElementById('btn-eraser');
         const btnPicker = document.getElementById('btn-picker');
-        const btnBucket = document.getElementById('btn-bucket');
         const btnPan = document.getElementById('btn-pan');
         const brushSizeInput = document.getElementById('brushSize');
         const brushOpacityInput = document.getElementById('brushOpacity');
@@ -461,18 +475,16 @@
 
         function setMode(mode) {
             currentMode = mode;
-            [btnDraw, btnEraser, btnPicker, btnBucket, btnPan].forEach(b => b?.classList.remove('active'));
+            [btnDraw, btnEraser, btnPicker, btnPan].forEach(b => b?.classList.remove('active'));
             if(mode === 'draw') btnDraw.classList.add('active');
             if(mode === 'eraser') btnEraser.classList.add('active');
             if(mode === 'picker') btnPicker.classList.add('active');
-            if(mode === 'bucket') btnBucket.classList.add('active');
             if(mode === 'pan') btnPan.classList.add('active');
         }
 
         btnDraw.addEventListener('click', () => setMode('draw'));
         btnEraser.addEventListener('click', () => setMode('eraser'));
         btnPicker.addEventListener('click', () => setMode('picker'));
-        btnBucket.addEventListener('click', () => setMode('bucket'));
         btnPan.addEventListener('click', () => setMode('pan'));
         
         brushSizeInput.addEventListener('input', (e) => {
@@ -496,11 +508,85 @@
         const wheelContainer = document.getElementById('wheelContainer');
         const btnLayers = document.getElementById('btn-layers');
         const layersContainer = document.getElementById('layersContainer');
+        const bubble = document.getElementById('color-drop-bubble');
+
+        // --- LÓGICA DEL COLOR DROP (ESTILO PROCREATE) ---
+        let colorDropTimeout = null;
+        let isColorDropping = false;
 
         colorPreview.addEventListener('pointerdown', (e) => { 
             e.stopPropagation(); 
-            layersContainer.classList.remove('show');
-            wheelContainer.classList.toggle('show'); 
+            
+            // Si la ventana de la rueda está abierta, el click normal solo debe cerrarla o mantenerla
+            // Iniciamos temporizador para arrastre (500ms)
+            colorDropTimeout = setTimeout(() => {
+                isColorDropping = true;
+                bubble.style.backgroundColor = currentColor;
+                bubble.style.display = 'block';
+                bubble.style.left = e.clientX + 'px';
+                bubble.style.top = e.clientY + 'px';
+                
+                // Ocultamos los paneles molestos al arrastrar
+                layersContainer.classList.remove('show');
+                wheelContainer.classList.remove('show');
+                
+                // Capturamos el puntero en el documento para seguir el arrastre completo
+                colorPreview.setPointerCapture(e.pointerId);
+            }, 400);
+        });
+
+        colorPreview.addEventListener('pointermove', (e) => {
+            if (!isColorDropping) return;
+            e.stopPropagation();
+            bubble.style.left = e.clientX + 'px';
+            bubble.style.top = e.clientY + 'px';
+        });
+
+        colorPreview.addEventListener('pointerup', (e) => {
+            clearTimeout(colorDropTimeout);
+            
+            if (isColorDropping) {
+                isColorDropping = false;
+                bubble.style.display = 'none';
+                colorPreview.releasePointerCapture(e.pointerId);
+                
+                // Procesar la gota de pintura en las coordenadas finales
+                const dropX = e.clientX;
+                const dropY = e.clientY;
+                
+                // Verificar si cayó dentro del lienzo/canvas
+                const rect = canvas.getBoundingClientRect();
+                const pt = {
+                    x: Math.floor((dropX - rect.left) / scale),
+                    y: Math.floor((dropY - rect.top) / scale)
+                };
+
+                if (pt.x >= 0 && pt.x < canvas.width && pt.y >= 0 && pt.y < canvas.height) {
+                    const computedSpans = getFloodFillSpans(ctx, pt.x, pt.y);
+                    if (computedSpans.length > 0) {
+                        const elementData = {
+                            type: 'bucket',
+                            spans: computedSpans,
+                            color: currentColor,
+                            opacity: currentOpacity,
+                            layer: currentLayer
+                        };
+                        const newElementRef = push(linesRef, elementData);
+                        myLastKeys.push(newElementRef.key);
+                        redoStack = [];
+                    }
+                }
+            } else {
+                // Comportamiento de click normal: Alternar rueda de color
+                layersContainer.classList.remove('show');
+                wheelContainer.classList.toggle('show'); 
+            }
+        });
+
+        colorPreview.addEventListener('pointercancel', () => {
+            clearTimeout(colorDropTimeout);
+            isColorDropping = false;
+            bubble.style.display = 'none';
         });
 
         btnLayers.addEventListener('pointerdown', (e) => {
@@ -714,23 +800,6 @@
                         drawColorWheel();
                         setMode('draw'); 
                     }
-                    return;
-                }
-
-                if (currentMode === 'bucket') {
-                    const computedSpans = getFloodFillSpans(ctx, pt.x, pt.y);
-                    if (computedSpans.length === 0) return;
-
-                    const elementData = {
-                        type: 'bucket',
-                        spans: computedSpans,
-                        color: currentColor,
-                        opacity: currentOpacity,
-                        layer: currentLayer
-                    };
-                    const newElementRef = push(linesRef, elementData);
-                    myLastKeys.push(newElementRef.key);
-                    redoStack = [];
                     return;
                 }
 
@@ -987,7 +1056,7 @@
             } else {
                 isDraggingRef = true;
                 refOffsetX = e.clientX - rect.left;
-                refOffsetY = e.clientY - rect.top; // <-- Corrección aquí
+                refOffsetY = e.clientY - rect.top;
                 refHeader.setPointerCapture(e.pointerId);
             }
         });
@@ -1051,7 +1120,6 @@
 
         document.getElementById('status-bar').textContent = `Sala: ${roomName} | Lienzo 1000 × 1000`;
 
-        // --- LÓGICA PARA GUARDAR EL LIENZO EN PNG ---
         document.getElementById('btn-save').addEventListener('click', () => {
             const link = document.createElement('a');
             link.download = `gloart_${roomName}.png`;
